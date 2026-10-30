@@ -1,0 +1,10 @@
+services:
+  solarcdn:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    volumes:
+      - solarcdn_storage:/app/storage
+volumes:
+  solarcdn_storage:
