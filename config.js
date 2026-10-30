@@ -1,0 +1,1 @@
+export default {host:'0.0.0.0',port:Number(process.env.PORT||3000),publicBaseUrl:'http://localhost:3000',database:{host:'127.0.0.1',user:'solarcdn',password:'CHANGE_ME',name:'solarcdn'},jwtSecret:'CHANGE_ME_TO_A_RANDOM_32_CHARACTER_SECRET',storageDir:'./storage',maxUploadBytes:26214400};
