@@ -3,7 +3,18 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - '3000:3000'
+      - '${PORT:-3000}:${PORT:-3000}'
+    environment:
+      PORT: ${PORT:-3000}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?Set PUBLIC_BASE_URL}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      DB_HOST: ${DB_HOST:?Set DB_HOST}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-solarcdn}
+      DB_USER: ${DB_USER:-solarcdn}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      STORAGE_DIR: /app/storage
     volumes:
       - solarcdn_storage:/app/storage
 volumes:
