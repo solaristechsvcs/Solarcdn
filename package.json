@@ -5,8 +5,9 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test",
-    "build": "node --check src/server.js && node --check src/app.js && node --check public/dashboard.js",
-    "create-admin": "node scripts/create-admin.js"
+    "build": "node --check src/server.js && node --check src/app.js && node --check public/dashboard.js && node --check src/discord.js && node --check scripts/migrate.js",
+    "create-admin": "node scripts/create-admin.js",
+    "migrate": "node scripts/migrate.js"
   },
   "dependencies": {
     "express": "^4.21.2",

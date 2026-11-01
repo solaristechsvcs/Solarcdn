@@ -1,3 +1,4 @@
+import {configureDiscord} from './discord.js';
 import express from 'express';
 import helmet from 'helmet';
 import multer from 'multer';
@@ -17,7 +18,7 @@ function detectedType(b) {
  if(b.subarray(0,5).toString()==='%PDF-') return 'application/pdf';
  return null;
 }
-export async function createApp(config, db) {
+export async function createApp(config, db, options={}) {
  if(!config.jwtSecret||config.jwtSecret.length<32||config.jwtSecret.includes('CHANGE_ME')) throw new Error('Set JWT_SECRET to a random secret of at least 32 characters');
  const base=new URL(config.publicBaseUrl).origin;
  const secure=new URL(base).protocol==='https:';
@@ -46,9 +47,19 @@ export async function createApp(config, db) {
   let claims;
   try {claims=jwt.verify(token,config.jwtSecret,{algorithms:['HS256']});} catch {return res.status(401).json({error:'Please sign in'});}
   const [[user]]=await db.execute('SELECT id,email,role FROM users WHERE id=?',[claims.sub]);
-  if(!user||user.role!=='admin') return res.status(403).json({error:'Administrator access required'});
+  if(!user)return res.status(403).json({error:'Administrator access required'});
+  user.isOwner=false;
+  if(claims.discordId){
+   const [[account]]=await db.execute('SELECT user_id FROM discord_accounts WHERE discord_id=?',[claims.discordId]);
+   if(!account||String(account.user_id)!==String(user.id))return res.status(403).json({error:'Administrator access required'});
+   const [[grant]]=await db.execute('SELECT discord_id FROM discord_admins WHERE discord_id=?',[claims.discordId]);
+   user.isOwner=owners.has(claims.discordId);
+   if(!user.isOwner&&!grant)return res.status(403).json({error:'Administrator access required'});
+   user.discordId=claims.discordId;user.role=user.isOwner?'owner':'admin';
+  }else if(user.role!=='admin')return res.status(403).json({error:'Administrator access required'});
   req.user=user; next();
  });
+ const owners=configureDiscord(app,{config,db,base,secure,wrap,cookie,auth,fetchDiscord:options.fetchDiscord});
  app.get('/health',(_req,res)=>res.json({ok:true,service:'solarcdn'}));
  app.post('/api/auth/login',wrap(async(req,res)=>{
   const key=req.ip; const now=Date.now(); let limit=attempts.get(key);

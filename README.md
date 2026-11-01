@@ -60,3 +60,39 @@ Verify `GET /health` returns JSON and `GET /` returns the SolarCDN login page. L
 ## Routes
 
 `GET /`, `GET /health`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout`, `GET /api/assets?page=1`, `POST /api/assets` (multipart `file`), `DELETE /api/assets/:id`, `GET /assets/:id` (public). Existing bearer authentication is accepted for valid signed tokens, but only admins can manage files; login now returns an HttpOnly cookie rather than a JSON bearer token.
+
+## Discord sign-in and owner administration
+
+Create an application in the Discord Developer Portal. Under OAuth2, register this exact redirect URL:
+
+```text
+https://cdn.solaristechsvcs.com/api/auth/discord/callback
+```
+
+Set `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and comma-separated `DISCORD_OWNER_IDS` in the hosting environment, and ensure `PUBLIC_BASE_URL` is `https://cdn.solaristechsvcs.com`. No bot token or bot invitation is required: sign-in requests only the `identify` scope. Keep the client secret private. Discord's OAuth documentation: https://docs.discord.com/developers/topics/oauth2.
+
+Alternatively, enter the values directly in your private server copy of `config.js`:
+
+```js
+discord: {
+ clientId: process.env.DISCORD_CLIENT_ID || '',
+ clientSecret: process.env.DISCORD_CLIENT_SECRET || '',
+ ownerIds: ['YOUR_DISCORD_USER_ID', 'ANOTHER_OWNER_DISCORD_USER_ID']
+},
+```
+
+Replace the owner placeholders with actual Discord user IDs, keeping the quotes. IDs are strings, never JavaScript numbers. Enable Developer Mode in Discord and use Copy User ID on the intended account. Do not commit your private client secret or server configuration.
+
+Before starting the updated app, run `npm run migrate`. This creates two additional tables without modifying existing users or assets; the database account needs CREATE TABLE permission for this step. New installations still import `schema.sql` first. In Wisp with only a running-app console, temporarily use the startup command below (it is also safe on subsequent starts):
+
+```sh
+cd /home/container && npm ci --omit=dev && npm run migrate && node src/server.js
+```
+
+After migration you can restore `cd /home/container && node src/server.js`. If running Docker Compose, migrate with `docker compose run --rm solarcdn npm run migrate` before starting the updated container. Restart after changing configuration. Keep your existing database/JWT settings when updating your private config.js.
+
+Configured owners sign in through **Continue with Discord** and see the **Administrators** section below the file manager. Enter another person's Discord user ID to grant access before their first sign-in. Revoke access in the same section. Only configured owners can manage these grants; password admins and delegated Discord admins cannot appoint admins or modify owners. Owner IDs are changed only in configuration, followed by an application restart. Removing a configured owner removes owner access; if that ID also has an explicit admin grant, it retains ordinary admin access until that grant is revoked.
+
+Unapproved Discord accounts receive an access-denied message and are not provisioned. Approved accounts receive separate internal user records, preserving file ownership across sign-ins. They are never automatically linked to existing password accounts by email. Existing password accounts and their admin privileges are managed separately using the database procedure above. The owner section manages Discord access only.
+
+OAuth state is short-lived, browser-bound and single-use. Discord tokens are exchanged on the server and are not returned to the browser or stored in the database. The local session lasts two hours, and every request checks current grants and owner configuration. Revoking a grant blocks an existing session on its next request; it does not delete uploaded files. OAuth state is in process memory: use a single Node process or sticky routing, and retry sign-in after a restart during authorization. Discord sign-in controls are hidden until both client ID and secret are configured. The tests mock Discord and MySQL; the real developer application and database migration must be verified on deployment.

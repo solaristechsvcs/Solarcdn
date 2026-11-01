@@ -13,6 +13,9 @@ services:
       DB_NAME: ${DB_NAME:-solarcdn}
       DB_USER: ${DB_USER:-solarcdn}
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      DISCORD_OWNER_IDS: ${DISCORD_OWNER_IDS:-}
       TRUST_PROXY: ${TRUST_PROXY:-0}
       STORAGE_DIR: /app/storage
     volumes:
