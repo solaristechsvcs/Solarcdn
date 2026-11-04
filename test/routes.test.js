@@ -30,7 +30,7 @@ test('dashboard and authenticated file lifecycle',async()=>{
   assert.equal((await request('/api/auth/login',{...credentials,body:JSON.stringify({email:'a',password:'wrong'})})).status,401);
   r=await request('/api/auth/login',credentials);assert.equal(r.status,200);assert.match(r.headers.get('set-cookie'),/HttpOnly; SameSite=Strict/);const cookie=r.headers.get('set-cookie').split(';')[0];const headers={Cookie:cookie,'X-SolarCDN-Request':'1'};
   assert.equal((await request('/api/auth/me',{headers})).status,200);
-  admin=false;assert.equal((await request('/api/assets',{headers})).status,403);admin=true;
+  admin=false;assert.equal((await request('/api/assets',{headers})).status,200);assert.equal((await request('/api/users',{headers})).status,403);admin=true;
   const bad=new FormData();bad.append('file',new Blob(['<script>bad</script>'],{type:'image/png'}),'bad.png');assert.equal((await request('/api/assets',{method:'POST',headers,body:bad})).status,415);
   const large=new FormData();large.append('file',new Blob([Buffer.alloc(1001)],{type:'image/png'}),'large.png');assert.equal((await request('/api/assets',{method:'POST',headers,body:large})).status,400);
   const bytes=Buffer.from([137,80,78,71,13,10,26,10]);const form=new FormData();form.append('file',new Blob([bytes],{type:'image/png'}),'example.png');

@@ -1,11 +1,25 @@
 const $=id=>document.getElementById(id);
-let page=1,maxUpload=26214400;
+async function loadUsers(){
+ const data=await api('/api/users?page='+userPage);$('users-list').replaceChildren();
+ $('users-page').textContent='Page '+userPage;$('users-previous').disabled=userPage===1;$('users-next').disabled=data.users.length<50;
+ for(const user of data.users){
+  const row=document.createElement('div');row.className='admin-row';
+  const label=document.createElement('span');label.textContent=user.email+' · '+user.role;
+  const select=document.createElement('select');select.setAttribute('aria-label','Role for '+user.email);
+  for(const role of ['user','staff','admin']){const option=document.createElement('option');option.value=role;option.textContent=role;select.append(option);}select.value=user.role;
+  const save=document.createElement('button');save.textContent='Save role';
+  select.disabled=save.disabled=Boolean(user.discord_managed)||String(user.id)===String(currentUser.id);
+  save.onclick=async()=>{if(!confirm('Set '+user.email+' to '+select.value+'?'))return;save.disabled=true;try{await api('/api/users/'+user.id+'/role',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:select.value})});await loadUsers();notice('Role updated.');}catch(e){notice(e.message);}finally{save.disabled=false;}};
+  row.append(label,select,save);$('users-list').append(row);
+ }
+}
+let page=1,maxUpload=26214400,userPage=1,currentUser;
 const format=n=>{n=Number(n);return n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':n<1073741824?(n/1048576).toFixed(1)+' MB':(n/1073741824).toFixed(2)+' GB';};
 function notice(text){$('notice').textContent=text;}
-function signedIn(value){$('dashboard').hidden=!value;$('logout').hidden=!value;$('login').hidden=value;if(!value)$('admin-section').hidden=true;}
+function signedIn(value){$('dashboard').hidden=!value;$('logout').hidden=!value;$('login').hidden=value;if(!value){$('admin-section').hidden=true;$('users-section').hidden=true;}}
 async function api(url,options={}){
  const response=await fetch(url,{...options,headers:{'X-SolarCDN-Request':'1',...options.headers}});
- if(response.status===401||(response.status===403&&!url.startsWith('/api/admins'))) signedIn(false);
+ if(response.status===401) signedIn(false);
  if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||'Request failed. Please try again.');}
  return response.status===204?null:response.json();
 }
@@ -29,8 +43,11 @@ async function load(){
   actions.append(copy,open,remove);details.append(name,meta,url,actions);card.append(preview,details);$('files').append(card);
  }
 }
-async function init(){const data=await api('/api/auth/me');maxUpload=data.maxUploadBytes;$('identity').textContent=data.user.discordId?'Discord '+data.user.discordId+' · '+data.user.role:data.user.email;$('upload-help').textContent='PNG, JPEG, GIF, WebP or PDF · Maximum '+format(maxUpload)+'. Uploaded files are public.';signedIn(true);await load();$('admin-section').hidden=!data.user.isOwner;if(data.user.isOwner)await loadAdmins();}
+async function init(){const data=await api('/api/auth/me');maxUpload=data.maxUploadBytes;currentUser=data.user;$('identity').textContent=data.user.discordId?'Discord '+data.user.discordId+' · '+data.user.role:data.user.email+' · '+data.user.role;$('upload-help').textContent='PNG, JPEG, GIF, WebP or PDF · Maximum '+format(maxUpload)+'. Uploaded files are public.';signedIn(true);await load();$('admin-section').hidden=!data.user.isOwner;if(data.user.isOwner)await loadAdmins();$('users-section').hidden=!['admin','owner'].includes(data.user.role);if(!$('users-section').hidden){userPage=1;await loadUsers();}}
 $('login-form').onsubmit=async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;notice('');try{const form=new FormData(event.target);await api('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(form))});event.target.reset();page=1;await init();}catch(e){notice(e.message);}finally{button.disabled=false;}};
+$('register-form').onsubmit=async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;try{const data=await api('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(event.target)))});event.target.reset();notice(data.message);}catch(e){notice(e.message);}finally{button.disabled=false;}};
+$('users-previous').onclick=()=>{userPage--;loadUsers().catch(e=>notice(e.message));};
+$('users-next').onclick=()=>{userPage++;loadUsers().catch(e=>notice(e.message));};
 $('upload-form').onsubmit=async event=>{event.preventDefault();const button=event.submitter;const file=event.target.elements.file.files[0];if(!file)return;if(file.size>maxUpload){notice('File exceeds '+format(maxUpload)+'.');return;}button.disabled=true;notice('Uploading…');try{await api('/api/assets',{method:'POST',body:new FormData(event.target)});event.target.reset();page=1;await load();notice('File uploaded. Its public URL is ready to copy.');}catch(e){notice(e.message);}finally{button.disabled=false;}};
 $('logout').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST'});signedIn(false);$('files').replaceChildren();notice('Signed out.');}catch(e){notice(e.message);}};
 $('refresh').onclick=()=>load().catch(e=>notice(e.message));
