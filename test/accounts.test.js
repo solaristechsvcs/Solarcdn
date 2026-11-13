@@ -56,6 +56,17 @@ test('registration, current-role authorization and serialized administrator prot
   r=await signup(input);assert.equal(r.status,202);assert.deepEqual(await r.json(),response);
   assert.equal((await signup(input)).status,429);
   r=await request('/api/auth/login',{method:'POST',body:{email:'NEW@Test.Example',password:input.password}});assert.equal(r.status,200);assert.equal((await r.json()).user.role,'user');
+  const cookie=r.headers.get('set-cookie').split(';')[0];
+  const session=await fetch('http://127.0.0.1:'+server.address().port+'/api/auth/me',{headers:{Cookie:cookie}});
+  assert.equal(session.status,200);assert.equal((await session.json()).user.email,'new@test.example');
+  users.get(user.id).role='staff';
+  const promoted=await fetch('http://127.0.0.1:'+server.address().port+'/api/auth/me',{headers:{Cookie:cookie}});
+  assert.equal((await promoted.json()).user.role,'staff');
+  users.delete(user.id);
+  assert.equal((await fetch('http://127.0.0.1:'+server.address().port+'/api/auth/me',{headers:{Cookie:cookie}})).status,401);
+  for(const token of ['broken',jwt.sign({sub:'1'},secret,{expiresIn:-1})]){
+   assert.equal((await fetch('http://127.0.0.1:'+server.address().port+'/api/auth/me',{headers:{Cookie:'solarcdn_session='+token}})).status,401);
+  }
   assert.ok(rollbackCount>=4);
  }finally{await new Promise(r=>server.close(r));await fs.rm(root,{recursive:true,force:true});}
 });

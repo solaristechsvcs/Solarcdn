@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import {createApp} from '../src/app.js';
 test('dashboard and authenticated file lifecycle',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'solarcdn-'));
@@ -22,6 +23,7 @@ test('dashboard and authenticated file lifecycle',async()=>{
  const request=(url,options)=>fetch(base+url,options);
  try{
   let r=await request('/');assert.equal(r.status,200);assert.match(await r.text(),/File manager/);
+  for(const url of ['/login','/register','/dashboard','/staff','/admin']){const page=await request(url);assert.equal(page.status,200);assert.equal(page.headers.get('cache-control'),'no-store');const html=await page.text();assert.ok(html.includes('href="/login"'));assert.match(html,/id="register-form"/);}
   for(const url of ['/dashboard.js','/style.css','/health'])assert.equal((await request(url)).status,200);
   assert.equal((await request('/api/assets')).status,401);
   const credentials={method:'POST',headers:{'Content-Type':'application/json','X-SolarCDN-Request':'1'},body:JSON.stringify({email:'admin@example.test',password:'test-password'})};
@@ -40,5 +42,33 @@ test('dashboard and authenticated file lifecycle',async()=>{
   assert.equal((await request('/api/assets/not-a-uuid',{method:'DELETE',headers})).status,404);
   assert.equal((await request('/api/assets/'+asset.id,{method:'DELETE',headers})).status,204);assert.equal((await request('/assets/'+asset.id)).status,404);assert.deepEqual(await fs.readdir(root),[]);
   r=await request('/api/auth/logout',{method:'POST',headers});assert.equal(r.status,204);assert.match(r.headers.get('set-cookie'),/Max-Age=0/);
+ }finally{await new Promise(r=>server.close(r));await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('HTTPS login cookies, generic errors, expiry, CSRF and throttling',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'solarcdn-login-'));
+ const secret='s'.repeat(48),password='staff-test-password';
+ const user={id:2,email:'staff@example.test',role:'staff',password_hash:await bcrypt.hash(password,10)};
+ const db={async execute(sql,p){return [[...(sql.includes('WHERE email=')?p[0]===user.email?[user]:[]:[user])]];}};
+ const app=await createApp({jwtSecret:secret,publicBaseUrl:'https://cdn.example.test',storageDir:root,maxUploadBytes:1000},db);
+ const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+ const base='http://127.0.0.1:'+server.address().port;
+ const login=(body,extra={})=>fetch(base+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json','X-SolarCDN-Request':'1',...extra},body:JSON.stringify(body)});
+ try{
+  for(const email of ['unknown@example.test',user.email]){
+   const r=await login({email,password:'wrong'});assert.equal(r.status,401);assert.deepEqual(await r.json(),{error:'Invalid credentials'});
+  }
+  assert.equal((await login({email:user.email,password:123})).status,400);
+  assert.equal((await login({email:user.email,password:'😀'.repeat(20)})).status,400);
+  const r=await login({email:' STAFF@example.test ',password});assert.equal(r.status,200);
+  const cookie=r.headers.get('set-cookie');assert.match(cookie,/HttpOnly; SameSite=Strict; Path=\/api; Max-Age=7200; Secure/);
+  const data=await r.json();assert.equal(data.user.role,'staff');assert.equal(data.token,undefined);assert.equal(data.user.password_hash,undefined);
+  const token=cookie.split(';')[0].slice('solarcdn_session='.length);const claims=jwt.verify(token,secret);assert.equal(claims.exp-claims.iat,7200);
+  const headers={Cookie:cookie.split(';')[0]};
+  assert.equal((await fetch(base+'/api/auth/logout',{method:'POST',headers})).status,403);
+  const logout=await fetch(base+'/api/auth/logout',{method:'POST',headers:{...headers,'X-SolarCDN-Request':'1'}});
+  assert.equal(logout.status,204);assert.match(logout.headers.get('set-cookie'),/Max-Age=0; Secure/);
+  for(let i=0;i<5;i++)await login({email:user.email,password:'wrong'});
+  assert.equal((await login({email:user.email,password})).status,429);
  }finally{await new Promise(r=>server.close(r));await fs.rm(root,{recursive:true,force:true});}
 });

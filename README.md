@@ -1,6 +1,6 @@
 # SolarCDN
 
-Node.js 22+, MySQL 8 and persistent local storage. GET / serves the administration dashboard. Password accounts with roles `user`, `staff`, and `admin` can sign in and manage their own files. Only admins (including configured Discord owners and granted Discord admins) can manage password-account roles. Files are public to anyone with their URL. This is a single-origin file server, not a distributed CDN.
+Node.js 22+, MySQL 8 and persistent local storage. GET / serves the sign-in page and restores an existing session. Password accounts with roles `user`, `staff`, and `admin` can sign in and manage their own files. Only admins (including configured Discord owners and granted Discord admins) can manage password-account roles. Files are public to anyone with their URL. This is a single-origin file server, not a distributed CDN.
 
 ## Configuration and first deployment
 
@@ -115,3 +115,13 @@ Discord accounts are marked as externally managed and cannot be assigned databas
 Inspect persistence using SELECT id,email,role FROM users ORDER BY id; and SHOW COLUMNS FROM users LIKE 'role';. Authorized database operators can set role='staff' for a specific account after migration. Prefer the dashboard/API because direct SQL does not enforce self-demotion or last-admin protections. Do not roll the ENUM back while staff rows exist; restore code/database together from backups if rollback is needed.
 
 Tests cover HTTP signup validation and rate limiting, password hashing/default role, login, non-admin denials, promotions/demotions, self/last-admin and concurrent revocation protection, Discord compatibility, file lifecycle, and migration ordering/reruns using database doubles. Run npm test and npm run build. A real MySQL migration and Wisp smoke test remain deployment checks; tests do not replace database backups.
+
+## Website sign-in update
+
+Use the header links to open `/login` or `/register`. Registration returns to sign-in with the email filled in and clears the submitted password. After sign-in or session restoration, current database roles select `/dashboard` (user), `/staff` (staff), or `/admin` (admin/Discord owner). These URLs serve the same public application shell; protected API checks control all account data and role operations. Staff has its own view label and retains the same own-file permissions as users. Administrators see user-role controls; only Discord owners see Discord grant controls.
+
+The browser sends same-origin HttpOnly cookies, never stores tokens in local/session storage, and disables response caching for API calls. Expired, invalid, or deleted-account sessions return to sign-in and clear rendered account/file/role details. Sign-out clears the cookie and account UI. As before, stateless JWTs cannot be individually revoked by sign-out; copied tokens expire after two hours, and rotating JWT_SECRET invalidates all sessions.
+
+This website update adds no schema changes or environment variables. For older installations, keep running the existing `npm run migrate` step for staff roles and Discord tables. Preserve MySQL, storage, private environment variables and JWT_SECRET while updating main. In Wisp, stop the application, update the files (`git pull --ff-only origin main` for a checkout), then use `cd /home/container && npm ci --omit=dev && npm run migrate && node src/server.js` and start the application. Restart the application server, not the Wisp daemon. Ensure PUBLIC_BASE_URL is the public HTTPS origin so cookies have Secure set; preserve the existing trusted proxy setting only if it matches your proxy setup.
+
+Verify `/health`, open `/login`, register and sign in, reload the dashboard, upload/preview/delete a file, and sign out. Test a staff account and an administrator account for their respective views. Tests exercise browser event handlers with a DOM/fetch adapter and HTTP behavior with database doubles; a real MySQL migration and the deployed HTTPS/Wisp environment still need the deployment smoke checks above.

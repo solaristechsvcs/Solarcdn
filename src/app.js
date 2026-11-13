@@ -48,7 +48,7 @@ export async function createApp(config, db, options={}) {
   let claims;
   try {claims=jwt.verify(token,config.jwtSecret,{algorithms:['HS256']});} catch {return res.status(401).json({error:'Please sign in'});}
   const [[user]]=await db.execute('SELECT id,email,role FROM users WHERE id=?',[claims.sub]);
-  if(!user)return res.status(403).json({error:'Administrator access required'});
+  if(!user)return res.status(401).json({error:'Please sign in'});
   user.isOwner=false;
   if(claims.discordId){
    const [[account]]=await db.execute('SELECT user_id FROM discord_accounts WHERE discord_id=?',[claims.discordId]);
@@ -107,6 +107,11 @@ export async function createApp(config, db, options={}) {
   if(!result.affectedRows) return res.status(404).json({error:'File not found'});
   await fs.rm(path.join(root,req.params.id),{force:true});res.sendStatus(204);
  }));
+ // Serve only a public shell here; account data always requires API authentication.
+ app.get(['/', '/login', '/register', '/dashboard', '/staff', '/admin'],(_req,res)=>{
+  res.set('Cache-Control','no-store');
+  res.sendFile(fileURLToPath(new URL('../public/index.html',import.meta.url)));
+ });
  app.use(express.static(fileURLToPath(new URL('../public/',import.meta.url)),{index:'index.html'}));
  app.use((err,req,res,next)=>{
   if(res.headersSent) return next(err);
